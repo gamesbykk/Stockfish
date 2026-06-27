@@ -151,8 +151,19 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
         return false;
     if (pos.state()->pliesFromNull < 6 || ss->ply < 20)
         return false;
-    return move.from_sq() == (ss - 2)->currentMove.to_sq()
-        && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
+    bool strictShuffle = move.from_sq() == (ss - 2)->currentMove.to_sq()
+                      && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
+    if (strictShuffle)
+        return true;
+    if ((ss - 4)->currentMove.is_ok() && (ss - 2)->currentMove.is_ok())
+    {
+        bool returnToOrigin = move.to_sq() == (ss - 4)->currentMove.from_sq()
+                           && move.from_sq() == (ss - 4)->currentMove.to_sq();
+        if (returnToOrigin)
+            return true;
+    }
+
+    return false;
 }
 
 }  // namespace
@@ -1161,7 +1172,7 @@ moves_loop:  // When in check, search starts here
                 int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
-                if (!givesCheck && lmrDepth < 7)
+                if (!givesCheck && lmrDepth < 7) 
                 {
                     Value futilityValue = ss->staticEval + 231 + 232 * lmrDepth
                                         + PieceValue[capturedPiece] + 131 * captHist / 1024;
@@ -1172,7 +1183,7 @@ moves_loop:  // When in check, search starts here
 
                 // SEE based pruning for captures and checks
                 // Avoid pruning sacrifices of our last piece for stalemate
-                int margin = 700 * std::sqrt(depth) + captHist * 34 / 1024;
+                int margin = 175 * depth + captHist * 34 / 1024;
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
                     && !pos.see_ge(move, -margin))
                     continue;
