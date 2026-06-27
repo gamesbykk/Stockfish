@@ -852,6 +852,12 @@ Value Search::Worker::search(
     // false otherwise. The improving flag is used in various pruning heuristics.
     // Similarly, opponentWorsening is true if our static evaluation is better
     // for us than at the last ply.
+    // Normalized to roughly [-1, 1] range, with 1 = strongly improving
+    int evalDelta = ss->staticEval - (ss - 2)->staticEval;
+    double improvingFactor = std::tanh(evalDelta / 100.0); // 0 crossing at 0, saturates around ±300cp
+    double improvingFactor01 = (improvingFactor + 1) / 2.0;
+    int opponentDelta = ss->staticEval - (-(ss - 1)->staticEval);
+    double opponentWorseningFactor = std::tanh(opponentDelta / 100.0);
     improving         = ss->staticEval > (ss - 2)->staticEval;
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
@@ -991,15 +997,15 @@ Value Search::Worker::search(
         futilityMult -= 20 * !ss->ttHit;
 
         Value futilityMargin = futilityMult * depth
-                             - (2934 * improving + 343 * opponentWorsening) * futilityMult / 1024
-                             + std::abs(correctionValue) / 182069;
+                     - int((2934 * improvingFactor01 + 343 * opponentWorseningFactor) 
+                       * futilityMult / 1024);
 
         if (eval - futilityMargin >= beta)
             return (716 * beta + 308 * eval) / 1024;
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && ss->staticEval >= beta - 14 * depth - 45 * improving + 374 && !excludedMove
+    if (cutNode && ss->staticEval >= beta - 14 * depth - 45 * improvingFactor01 + 374 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -1044,7 +1050,7 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 214 - 59 * improving;
+    probCutBeta = beta + 214 - 59 * improvingFactor01;
     if (depth >= 3
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
@@ -1160,7 +1166,7 @@ moves_loop:  // When in check, search starts here
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
             // Skip quiet moves if movecount exceeds our threshold
-            if (moveCount >= (3 + depth * depth) / (2 - improving))
+            if (moveCount >= (3 + depth * depth) / (2 - improvingFactor01))
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
